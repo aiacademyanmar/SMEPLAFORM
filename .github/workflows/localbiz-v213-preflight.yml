@@ -1,0 +1,53 @@
+name: LocalBiz V2.1.3 — Repository Preflight
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/localbiz-v213-preflight.yml'
+      - 'android/**'
+      - 'laravel-overlay/**'
+      - 'scripts/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-readiness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect checkout and collect truthful evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          printf 'Commit: %s\n' "$GITHUB_SHA" | tee evidence/preflight.txt
+          printf 'Repository: %s\n' "$GITHUB_REPOSITORY" | tee -a evidence/preflight.txt
+          required=(
+            "laravel-overlay/routes/api.php"
+            "android/app/build.gradle.kts"
+            "scripts/bootstrap_laravel_ci.sh"
+            ".github/workflows/localbiz-v212-ci.yml"
+          )
+          missing=0
+          for file in "${required[@]}"; do
+            if test -f "$file"; then
+              printf 'PRESENT %s\n' "$file" | tee -a evidence/preflight.txt
+            else
+              printf 'MISSING %s\n' "$file" | tee -a evidence/preflight.txt
+              missing=$((missing+1))
+            fi
+          done
+          if ((missing > 0)); then
+            printf 'BLOCKED: %d required source paths missing. No APK or Laravel tests executed.\n' "$missing" | tee -a evidence/preflight.txt
+            exit 1
+          fi
+          echo 'Source paths present. This preflight does not establish runtime or APK PASS.' | tee -a evidence/preflight.txt
+      - name: Upload preflight evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: localbiz-v213-repository-preflight
+          path: evidence/
+          if-no-files-found: warn
+          retention-days: 14
